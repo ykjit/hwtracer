@@ -40,15 +40,22 @@
 
 extern crate libc;
 
-use libc::{pid_t, c_char, c_void, getpid, size_t, c_int};
+use libc::{pid_t, c_char, c_void, getpid, size_t};
 use std::ffi::CString;
 use std::path::PathBuf;
+
+#[allow(dead_code)]
+#[repr(u8)]
+enum CBool {
+    CFalse = 0,
+    CTrue = 1,
+}
 
 // FFI stubs
 #[link(name = "traceme")]
 extern "C" {
     fn traceme_start_tracer(conf: *const TracerConf) -> *const c_void;
-    fn traceme_stop_tracer(tr_ctx: *const c_void) -> c_int;
+    fn traceme_stop_tracer(tr_ctx: *const c_void) -> u8;
 }
 
 // Struct used to communicate a tracing configuration to C. Must stay in sync with the C code.
@@ -184,7 +191,7 @@ impl Tracer {
             traceme_stop_tracer(self.tracer_ctx.expect("tracer wasn't started"))
         };
         if cfg!(not(travis)) {
-            assert!(rc == 0, "traceme_stop_tracer failed");
+            assert!(rc == CBool::CTrue as u8, "traceme_stop_tracer failed");
         }
     }
 }
