@@ -121,7 +121,7 @@ static int open_perf(pid_t target_pid);
 
 // Exposed Prototypes.
 struct tracer_ctx *traceme_start_tracer(struct tracer_conf *);
-int traceme_stop_tracer(struct tracer_ctx *tr_ctx);
+bool traceme_stop_tracer(struct tracer_ctx *tr_ctx);
 
 
 #ifndef TRAVIS
@@ -575,52 +575,52 @@ clean:
  * Arguments:
  *   tr_ctx: The tracer context returned by traceme_start_tracer.
  *
- * Returns 0 on success and -1 on failure.
+ * Returns true on success and false otherwise.
  */
-int
+bool
 traceme_stop_tracer(struct tracer_ctx *tr_ctx) {
 #ifdef TRAVIS
     (void) tr_ctx;
     DEBUG("Travis mode. Not stopping tracing");
-    return -1;
+    return false;
 #else
     DEBUG("stopping tracer");
 
-    int ret = 0;
+    int ret = true;
 
     // Turn off tracer hardware.
     if (ioctl(tr_ctx->perf_fd, PERF_EVENT_IOC_DISABLE, 0) < 0) {
-        ret = -1;
+        ret = false;
     }
 
     // Signal poll loop to end.
     if (close(tr_ctx->stop_fd_wr) == -1) {
-        ret = -1;
+        ret = false;
     }
 
     // Wait for poll loop to exit.
     DEBUG("wait for trace thread to exit");
     void *thr_exit;
     if (pthread_join(tr_ctx->tracer_thread, &thr_exit) != 0) {
-        ret = -1;
+        ret = false;
     }
-    if ((bool) thr_exit != 0) {
-        ret = -1;
+    if ((bool) thr_exit != true) {
+        ret = false;
     }
 
     // Clean up
     if (close(tr_ctx->stop_fd_rd) == -1) {
-        ret = -1;
+        ret = false;
     }
     if (close(tr_ctx->perf_fd) != 0) {
-        ret = -1;
+        ret = false;
     }
     if (close(tr_ctx->out_fd) == -1) {
-        ret = -1;
+        ret = false;
     }
     free(tr_ctx);
 
-    if (ret != -1) {
+    if (ret == true) {
         DEBUG("tracing complete");
     } else {
         DEBUG("failure");
