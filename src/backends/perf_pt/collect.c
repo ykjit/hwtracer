@@ -69,8 +69,6 @@
 #define MAX_OPEN_PERF_TRIES  20000
 #define OPEN_PERF_WAIT_NSECS 1000 * 30
 
-#define AUX_BUF_WAKE_RATIO 0.5
-
 #ifndef INFTIM
 #define INFTIM -1
 #endif
@@ -96,9 +94,13 @@ struct tracer_ctx {
  * Must stay in sync with the Rust-side.
  */
 struct tracer_conf {
-    pid_t       target_tid;         // Thread ID to trace.
-    size_t      data_bufsize;       // Data buf size (in pages).
-    size_t      aux_bufsize;        // AUX buf size (in pages).
+    pid_t       target_tid;             // Thread ID to trace.
+    size_t      data_bufsize;           // Data buf size (in pages).
+    size_t      aux_bufsize;            // AUX buf size (in pages).
+    float       aux_copyout_threshold;  // The fraction of the AUX buf to fill
+                                        // before copying data out.
+    size_t      new_trace_bufsize;      // The intial capacity (in bytes) of
+                                        // fresh trace buffers.
 };
 
 /*
@@ -155,7 +157,7 @@ static bool read_aux(void *, struct perf_event_mmap_page *,
 static bool poll_loop(int, int, struct perf_event_mmap_page *, void *,
                       struct perf_pt_trace *, struct perf_pt_cerror *);
 static void *tracer_thread(void *);
-static int open_perf(pid_t, size_t, struct perf_pt_cerror *);
+static int open_perf(pid_t, size_t, float, struct perf_pt_cerror *);
 
 // Exposed Prototypes.
 struct tracer_ctx *perf_pt_init_tracer(struct tracer_conf *, struct perf_pt_cerror *);
@@ -388,7 +390,8 @@ done:
  * Returns a file descriptor, or -1 on error.
  */
 static int
-open_perf(pid_t target_tid, size_t aux_bufsize, struct perf_pt_cerror *err) {
+open_perf(pid_t target_tid, size_t aux_bufsize, float aux_copyout_threshold,
+          struct perf_pt_cerror *err) {
     struct perf_event_attr attr;
     memset(&attr, 0, sizeof(attr));
     attr.size = sizeof(attr);
@@ -427,8 +430,10 @@ open_perf(pid_t target_tid, size_t aux_bufsize, struct perf_pt_cerror *err) {
     attr.watermark = 1;
     attr.wakeup_watermark = 1;
 
-    // Generate a PERF_RECORD_AUX sample when the AUX buffer is almost full.
-    attr.aux_watermark = (size_t) ((double) aux_bufsize * getpagesize()) * AUX_BUF_WAKE_RATIO;
+    // Generate a PERF_RECORD_AUX sample when the AUX buffer is a user-defined
+    // fraction (aux_copyout_threshold) full.
+    attr.aux_watermark = (size_t) ((double) aux_bufsize * getpagesize())
+                         * aux_copyout_threshold;
 
     // Acquire file descriptor through which to talk to Intel PT. This syscall
     // could return EBUSY, meaning another process or thread has locked the
@@ -529,7 +534,8 @@ perf_pt_init_tracer(struct tracer_conf *tr_conf, struct perf_pt_cerror *err)
     tr_ctx->perf_fd = -1;
 
     // Obtain a file descriptor through which to speak to perf.
-    tr_ctx->perf_fd = open_perf(tr_conf->target_tid, tr_conf->aux_bufsize, err);
+    tr_ctx->perf_fd = open_perf(tr_conf->target_tid, tr_conf->aux_bufsize,
+                                tr_conf->aux_copyout_threshold, err);
     if (tr_ctx->perf_fd == -1) {
         perf_pt_set_err(err, perf_pt_cerror_errno, errno);
         failing = true;
