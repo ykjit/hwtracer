@@ -856,6 +856,7 @@ mod tests {
             },
             _ => panic!(),
         }
+        PerfPTTracer::new(PerfPTTracer::config().data_bufsize(2048)).unwrap().destroy().unwrap();
     }
 
     #[test]
@@ -866,6 +867,7 @@ mod tests {
             },
             _ => panic!(),
         }
+        PerfPTTracer::new(PerfPTTracer::config().aux_bufsize(2048)).unwrap().destroy().unwrap();
     }
 
     #[test]
