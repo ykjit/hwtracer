@@ -321,6 +321,8 @@ pub struct PerfPTConf {
     data_bufsize: size_t,
     // AUX buffer size, in pages. Must be a power of 2.
     aux_bufsize: size_t,
+    // Fraction of the AUX buffer to fill before waking up to copy data out.
+    aux_copyout_threshold: f32,
     // The initial trace buffer size (in bytes) for new traces.
     new_trace_bufsize: size_t,
 }
@@ -332,6 +334,7 @@ impl PerfPTConf {
             target_tid: linux_gettid(),
             data_bufsize: 64,
             aux_bufsize: 1024,
+            aux_copyout_threshold: 0.5,
             new_trace_bufsize: 1024 * 1024, // 1MiB
         }
     }
@@ -356,6 +359,14 @@ impl PerfPTConf {
     /// Set the PT AUX buffer size (in pages).
     pub fn aux_bufsize(mut self, size: usize) -> Self {
         self.aux_bufsize = size as size_t;
+        self
+    }
+
+    /// Set the fraction of the AUX buffer to fill before copying data out.
+    ///
+    /// `fraction` is a floating point number between 0.0 and 1.0.
+    pub fn aux_copyout_threshold(mut self, fraction: f32) -> Self {
+        self.aux_copyout_threshold = fraction;
         self
     }
 
@@ -416,7 +427,9 @@ impl PerfPTTracer {
         if !power_of_2(config.aux_bufsize) {
             return Err(HWTracerError::BadConfig(String::from("aux_bufsize must be a positive power of 2")));
         }
-
+        if config.aux_copyout_threshold < 0. || config.aux_copyout_threshold > 1. {
+            return Err(HWTracerError::BadConfig(String::from("aux_copyout_threshold must be between 0 and 1")));
+        }
 
         Ok(Self {
             config: config,
@@ -853,5 +866,19 @@ mod tests {
             },
             _ => panic!(),
         }
+    }
+
+    #[test]
+    fn test_config_bad_aux_copyout_threshold() {
+        let expect_str = "aux_copyout_threshold must be between 0 and 1";
+        match PerfPTTracer::new(PerfPTTracer::config().aux_copyout_threshold(1.2)) {
+            Err(HWTracerError::BadConfig(s)) => assert_eq!(s, expect_str),
+            _ => panic!(),
+        }
+        match PerfPTTracer::new(PerfPTTracer::config().aux_copyout_threshold(-0.1)) {
+            Err(HWTracerError::BadConfig(s)) => assert_eq!(s, expect_str),
+            _ => panic!(),
+        }
+        PerfPTTracer::new(PerfPTTracer::config().aux_copyout_threshold(0.6)).unwrap().destroy().unwrap();
     }
 }
