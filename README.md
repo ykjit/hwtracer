@@ -1,5 +1,8 @@
 # hwtracer
 
+**The code in this repo has been moved. Development now happens
+[here](https://github.com/ykjit/yk/tree/master/hwtracer)**.
+
 A small Rust/C library to trace sections of the current process using CPU
 tracing technology.
 
